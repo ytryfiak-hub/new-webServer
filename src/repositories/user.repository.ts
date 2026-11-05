@@ -1,143 +1,136 @@
-import { pool } from '../config/database';
+import { SQL, and, count as countFn, desc, eq, ilike, ne, or } from 'drizzle-orm';
+import { db } from '../config/database';
+import { users } from '../db/schema';
 import {
   IUser,
   IUserWithSecrets,
-  PUBLIC_COLUMNS,
-  UserRow,
   UserWritableData,
-  UserWritableField,
   hashPassword,
-  toUser,
-  toUserWithSecrets,
-  userColumns,
+  publicColumns,
 } from '../models/user.model';
-import { CreateUserInput } from '../validations/user.validation';
+import { ApiError } from '../utils/ApiError';
 
 export interface UserFilter {
   search?: string;
 }
 
-// Нормалізація даних перед записом (аналог trim/lowercase/pre-save хука з Mongoose)
-async function normalize(input: UserWritableData): Promise<UserWritableData> {
-  const data: UserWritableData = {};
+// Вхідні дані з контролерів: дата народження приходить рядком
+type UserInput = Omit<UserWritableData, 'dateOfBirth'> & {
+  dateOfBirth?: string | Date | null;
+};
 
-  for (const [key, value] of Object.entries(input)) {
-    if (!(key in userColumns) || value === undefined) continue;
-    data[key as UserWritableField] = typeof value === 'string' ? value.trim() : value;
+const writableKeys = [
+  'name',
+  'surname',
+  'email',
+  'password',
+  'age',
+  'dateOfBirth',
+  'photo',
+  'refreshToken',
+] as const satisfies readonly (keyof UserWritableData)[];
+
+// Нормалізація даних перед записом: whitelist полів, trim, lowercase email, хеш пароля
+async function normalize(input: UserInput): Promise<UserWritableData> {
+  const data: Record<string, unknown> = {};
+
+  for (const key of writableKeys) {
+    const value = input[key];
+    if (value === undefined) continue;
+    data[key] = typeof value === 'string' ? value.trim() : value;
   }
 
   if (typeof data.email === 'string') data.email = data.email.toLowerCase();
   if (typeof data.password === 'string') data.password = await hashPassword(data.password);
 
-  return data;
+  if (typeof data.dateOfBirth === 'string') {
+    const date = new Date(data.dateOfBirth);
+    if (Number.isNaN(date.getTime())) {
+      throw ApiError.badRequest('dateOfBirth: некоректна дата');
+    }
+    data.dateOfBirth = date;
+  }
+
+  return data as UserWritableData;
 }
 
-function buildWhere(filter: UserFilter, startIndex = 1): { sql: string; params: unknown[] } {
-  if (!filter.search) return { sql: '', params: [] };
+function buildWhere(filter: UserFilter): SQL | undefined {
+  if (!filter.search) return undefined;
 
   // Екрануємо спецсимволи LIKE, щоб пошук був буквальним
-  const escaped = filter.search.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-  return {
-    sql: `WHERE name ILIKE $${startIndex} OR email ILIKE $${startIndex}`,
-    params: [`%${escaped}%`],
-  };
+  const pattern = `%${filter.search.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+  return or(ilike(users.name, pattern), ilike(users.email, pattern));
 }
 
-// Створення користувача
-async function create(input: CreateUserInput & { photo?: string }): Promise<IUser> {
-  const data = await normalize(input);
-  const fields = Object.keys(data) as UserWritableField[];
-  const columns = fields.map((f) => userColumns[f]);
-  const placeholders = fields.map((_, i) => `$${i + 1}`);
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
-  const { rows } = await pool.query<UserRow>(
-    `INSERT INTO users (${columns.join(', ')})
-     VALUES (${placeholders.join(', ')})
-     RETURNING ${PUBLIC_COLUMNS}`,
-    fields.map((f) => data[f]),
-  );
-  return toUser(rows[0]);
+// Створення користувача
+async function create(
+  input: UserInput & Pick<Required<UserWritableData>, 'name' | 'email' | 'password'>,
+): Promise<IUser> {
+  const data = await normalize(input);
+  const [user] = await db
+    .insert(users)
+    .values(data as typeof users.$inferInsert)
+    .returning(publicColumns);
+  return user;
 }
 
 // Звичайний пошук (БЕЗ пароля - для публічного профілю)
 async function findByEmail(email: string): Promise<IUser | null> {
-  const { rows } = await pool.query<UserRow>(
-    `SELECT ${PUBLIC_COLUMNS} FROM users WHERE email = $1`,
-    [email.trim().toLowerCase()],
-  );
-  return rows[0] ? toUser(rows[0]) : null;
+  const [user] = await db
+    .select(publicColumns)
+    .from(users)
+    .where(eq(users.email, normalizeEmail(email)));
+  return user ?? null;
 }
 
 // Пошук З ПАРОЛЕМ (використовується виключно при авторизації/логіні)
 async function findByEmailWithPassword(email: string): Promise<IUserWithSecrets | null> {
-  const { rows } = await pool.query<UserRow>('SELECT * FROM users WHERE email = $1', [
-    email.trim().toLowerCase(),
-  ]);
-  return rows[0] ? toUserWithSecrets(rows[0]) : null;
+  const [user] = await db.select().from(users).where(eq(users.email, normalizeEmail(email)));
+  return user ?? null;
 }
 
 async function findByEmailExcludingId(email: string, id: string): Promise<IUser | null> {
-  const { rows } = await pool.query<UserRow>(
-    `SELECT ${PUBLIC_COLUMNS} FROM users WHERE email = $1 AND id <> $2`,
-    [email.trim().toLowerCase(), id],
-  );
-  return rows[0] ? toUser(rows[0]) : null;
+  const [user] = await db
+    .select(publicColumns)
+    .from(users)
+    .where(and(eq(users.email, normalizeEmail(email)), ne(users.id, id)));
+  return user ?? null;
 }
 
 async function findById(id: string): Promise<IUser | null> {
-  const { rows } = await pool.query<UserRow>(
-    `SELECT ${PUBLIC_COLUMNS} FROM users WHERE id = $1`,
-    [id],
-  );
-  return rows[0] ? toUser(rows[0]) : null;
+  const [user] = await db.select(publicColumns).from(users).where(eq(users.id, id));
+  return user ?? null;
 }
 
 async function findMany(filter: UserFilter, skip: number, limit: number): Promise<IUser[]> {
-  const where = buildWhere(filter);
-  const n = where.params.length;
-
-  const { rows } = await pool.query<UserRow>(
-    `SELECT ${PUBLIC_COLUMNS} FROM users ${where.sql}
-     ORDER BY created_at DESC
-     LIMIT $${n + 1} OFFSET $${n + 2}`,
-    [...where.params, limit, skip],
-  );
-  return rows.map(toUser);
+  return db
+    .select(publicColumns)
+    .from(users)
+    .where(buildWhere(filter))
+    .orderBy(desc(users.createdAt))
+    .limit(limit)
+    .offset(skip);
 }
 
 async function count(filter: UserFilter): Promise<number> {
-  const where = buildWhere(filter);
-  const { rows } = await pool.query<{ count: string }>(
-    `SELECT COUNT(*) AS count FROM users ${where.sql}`,
-    where.params,
-  );
-  return Number(rows[0].count);
+  const [row] = await db.select({ value: countFn() }).from(users).where(buildWhere(filter));
+  return row.value;
 }
 
 // Гнучке оновлення: приймає як UpdateUserInput, так і інші поля (наприклад, refreshToken)
-async function updateById(id: string, input: UserWritableData): Promise<IUser | null> {
+async function updateById(id: string, input: UserInput): Promise<IUser | null> {
   const data = await normalize(input);
-  const fields = Object.keys(data) as UserWritableField[];
+  if (Object.keys(data).length === 0) return findById(id);
 
-  if (fields.length === 0) return findById(id);
-
-  const assignments = fields.map((f, i) => `${userColumns[f]} = $${i + 2}`);
-  const { rows } = await pool.query<UserRow>(
-    `UPDATE users
-     SET ${assignments.join(', ')}, updated_at = now()
-     WHERE id = $1
-     RETURNING ${PUBLIC_COLUMNS}`,
-    [id, ...fields.map((f) => data[f])],
-  );
-  return rows[0] ? toUser(rows[0]) : null;
+  const [user] = await db.update(users).set(data).where(eq(users.id, id)).returning(publicColumns);
+  return user ?? null;
 }
 
 async function deleteById(id: string): Promise<IUser | null> {
-  const { rows } = await pool.query<UserRow>(
-    `DELETE FROM users WHERE id = $1 RETURNING ${PUBLIC_COLUMNS}`,
-    [id],
-  );
-  return rows[0] ? toUser(rows[0]) : null;
+  const [user] = await db.delete(users).where(eq(users.id, id)).returning(publicColumns);
+  return user ?? null;
 }
 
 export const userRepository = {

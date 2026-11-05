@@ -25,13 +25,15 @@ export function errorHandler(
     message = err.message;
   } else {
     // Коди помилок PostgreSQL: https://www.postgresql.org/docs/current/errcodes-appendix.html
-    const pgCode = (err as { code?: unknown }).code;
+    // Drizzle загортає помилку драйвера у DrizzleQueryError, оригінал лежить у cause
+    const pgError = (err.cause ?? err) as Error & { code?: unknown };
+    const pgCode = pgError.code;
     if (pgCode === '23505') {
       statusCode = 409;
       message = 'Duplicate field value: resource already exists';
     } else if (typeof pgCode === 'string' && ['23502', '23514', '22P02', '22007', '22008'].includes(pgCode)) {
       statusCode = 400;
-      message = `Invalid data: ${err.message}`;
+      message = `Invalid data: ${pgError.message}`;
     }
   }
 

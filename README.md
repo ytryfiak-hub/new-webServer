@@ -1,7 +1,7 @@
 # Express User CRUD API
 
 REST API для CRUD-операцій над користувачами.
-Стек: **Express + TypeScript + PostgreSQL (node-postgres) + ESLint + Prettier**.
+Стек: **Express + TypeScript + PostgreSQL (Drizzle ORM) + ESLint + Prettier**.
 
 ## 📁 Структура проекту
 
@@ -13,7 +13,11 @@ express-user-crud/
 │   │   └── database.ts
 │   ├── controllers/      # Обробники HTTP запитів
 │   │   └── user.controller.ts
-│   ├── models/           # Типи користувача та мапінг рядків БД
+│   ├── db/               # Drizzle-схема таблиць
+│   │   └── schema.ts
+│   ├── repositories/     # Запити до БД через Drizzle
+│   │   └── user.repository.ts
+│   ├── models/           # Типи користувача (виводяться зі схеми)
 │   │   └── user.model.ts
 │   ├── routes/           # Express роутери
 │   │   ├── index.ts
@@ -62,7 +66,7 @@ DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/user_crud_db
 
 ### 3. Запустити PostgreSQL
 
-Локально (потрібен PostgreSQL 13+) або через Docker. Таблиця `users` створюється автоматично при старті сервера.
+Локально (потрібен PostgreSQL 13+), у хмарі (наприклад, Neon) або через Docker. Міграції з папки `drizzle/` застосовуються автоматично при старті сервера.
 
 ```bash
 docker run -d -p 5432:5432 --name postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=user_crud_db postgres:17
@@ -81,6 +85,16 @@ npm run dev
 ```bash
 npm run build
 npm start
+```
+
+## 🗄️ База даних (Drizzle)
+
+Схема описана в `src/db/schema.ts`. Після зміни схеми:
+
+```bash
+npm run db:generate   # згенерувати SQL-міграцію в drizzle/
+npm run db:migrate    # застосувати міграції (або просто перезапустити сервер)
+npm run db:studio     # веб-інтерфейс для перегляду даних
 ```
 
 ## 🧹 Лінтинг і форматування
