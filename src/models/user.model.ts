@@ -1,70 +1,84 @@
 import bcrypt from 'bcrypt';
-import { Document, Model, Schema, Types, model } from 'mongoose';
 
+// Публічне представлення користувача (без password і refreshToken)
 export interface IUser {
+  id: string;
   name: string;
+  surname: string | null;
   email: string;
-  password: string;
-  age?: number;
-}
-
-export interface IUserDocument extends IUser, Document {
-  _id: Types.ObjectId;
+  age: number | null;
+  dateOfBirth: Date | null;
+  photo: string | null;
   createdAt: Date;
   updatedAt: Date;
-  comparePassword(candidate: string): Promise<boolean>;
 }
 
-const userSchema = new Schema<IUserDocument>(
-  {
-    name: {
-      type: String,
-      required: [true, 'Name is required'],
-      trim: true,
-      minlength: 2,
-      maxlength: 100,
-    },
-    email: {
-      type: String,
-      required: [true, 'Email is required'],
-      unique: true,
-      lowercase: true,
-      trim: true,
-      match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Invalid email format'],
-    },
-    password: {
-      type: String,
-      required: [true, 'Password is required'],
-      minlength: 6,
-      select: false,
-    },
-    age: {
-      type: Number,
-      min: 0,
-      max: 150,
-    },
-  },
-  {
-    timestamps: true,
-    toJSON: {
-      transform: (_doc, ret: Record<string, unknown>) => {
-        delete ret.password;
-        return ret;
-      },
-    },
-  },
-);
+// Користувач разом із секретними полями (лише для авторизації)
+export interface IUserWithSecrets extends IUser {
+  password: string;
+  refreshToken: string | null;
+}
 
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
+// Рядок таблиці users у PostgreSQL
+export interface UserRow {
+  id: string;
+  name: string;
+  surname: string | null;
+  email: string;
+  password: string;
+  age: number | null;
+  date_of_birth: Date | null;
+  photo: string | null;
+  refresh_token: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
 
+// Відповідність полів API -> колонок БД (для insert/update)
+export const userColumns = {
+  name: 'name',
+  surname: 'surname',
+  email: 'email',
+  password: 'password',
+  age: 'age',
+  dateOfBirth: 'date_of_birth',
+  photo: 'photo',
+  refreshToken: 'refresh_token',
+} as const;
+
+export type UserWritableField = keyof typeof userColumns;
+export type UserWritableData = Partial<Record<UserWritableField, unknown>>;
+
+export const PUBLIC_COLUMNS =
+  'id, name, surname, email, age, date_of_birth, photo, created_at, updated_at';
+
+export function toUser(row: UserRow): IUser {
+  return {
+    id: row.id,
+    name: row.name,
+    surname: row.surname,
+    email: row.email,
+    age: row.age,
+    dateOfBirth: row.date_of_birth,
+    photo: row.photo,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function toUserWithSecrets(row: UserRow): IUserWithSecrets {
+  return {
+    ...toUser(row),
+    password: row.password,
+    refreshToken: row.refresh_token,
+  };
+}
+
+export async function hashPassword(password: string): Promise<string> {
   const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-  next();
-});
+  return bcrypt.hash(password, salt);
+}
 
-userSchema.methods.comparePassword = async function (candidate: string): Promise<boolean> {
-  return bcrypt.compare(candidate, this.password);
-};
-
-export const UserModel: Model<IUserDocument> = model<IUserDocument>('User', userSchema);
+export async function comparePassword(candidate: string, hash: string): Promise<boolean> {
+  return bcrypt.compare(candidate, hash);
+}

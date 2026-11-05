@@ -1,7 +1,7 @@
 # Express User CRUD API
 
 REST API для CRUD-операцій над користувачами.
-Стек: **Express + TypeScript + MongoDB (Mongoose) + ESLint + Prettier**.
+Стек: **Express + TypeScript + PostgreSQL (node-postgres) + ESLint + Prettier**.
 
 ## 📁 Структура проекту
 
@@ -13,7 +13,7 @@ express-user-crud/
 │   │   └── database.ts
 │   ├── controllers/      # Обробники HTTP запитів
 │   │   └── user.controller.ts
-│   ├── models/           # Mongoose моделі / схеми
+│   ├── models/           # Типи користувача та мапінг рядків БД
 │   │   └── user.model.ts
 │   ├── routes/           # Express роутери
 │   │   ├── index.ts
@@ -57,15 +57,15 @@ cp .env.example .env
 ```
 NODE_ENV=development
 PORT=5000
-MONGO_URI=mongodb://127.0.0.1:27017/user-crud-db
+DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/user_crud_db
 ```
 
-### 3. Запустити MongoDB
+### 3. Запустити PostgreSQL
 
-Локально (потрібен встановлений MongoDB) або через Docker:
+Локально (потрібен PostgreSQL 13+) або через Docker. Таблиця `users` створюється автоматично при старті сервера.
 
 ```bash
-docker run -d -p 27017:27017 --name mongo mongo:7
+docker run -d -p 5432:5432 --name postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=user_crud_db postgres:17
 ```
 
 ### 4. Запустити застосунок у режимі розробки

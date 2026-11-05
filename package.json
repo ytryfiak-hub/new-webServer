@@ -1,7 +1,7 @@
 {
   "name": "express-user-crud",
   "version": "1.0.0",
-  "description": "Express + TypeScript + MongoDB CRUD API for users",
+  "description": "Express + TypeScript + PostgreSQL CRUD API for users",
   "main": "dist/server.js",
   "type": "commonjs",
   "scripts": {
@@ -16,7 +16,7 @@
   "keywords": [
     "express",
     "typescript",
-    "mongodb",
+    "postgresql",
     "crud"
   ],
   "author": "",
@@ -27,8 +27,11 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "helmet": "^7.1.0",
-    "mongoose": "^8.5.1",
+    "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.0",
+    "multer": "^2.4.0",
+    "node": "^26.11.1",
+    "pg": "^8.23.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -36,8 +39,11 @@
     "@types/bcrypt": "^5.0.2",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/morgan": "^1.9.9",
+    "@types/multer": "^2.3.0",
     "@types/node": "^20.14.14",
+    "@types/pg": "^8.23.1",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^9.1.0",
     "prettier": "^3.3.3",

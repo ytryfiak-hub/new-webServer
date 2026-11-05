@@ -23,9 +23,16 @@ export function errorHandler(
   } else if (err.name === 'ValidationError') {
     statusCode = 400;
     message = err.message;
-  } else if ((err as { code?: number }).code === 11000) {
-    statusCode = 409;
-    message = 'Duplicate field value: resource already exists';
+  } else {
+    // Коди помилок PostgreSQL: https://www.postgresql.org/docs/current/errcodes-appendix.html
+    const pgCode = (err as { code?: unknown }).code;
+    if (pgCode === '23505') {
+      statusCode = 409;
+      message = 'Duplicate field value: resource already exists';
+    } else if (typeof pgCode === 'string' && ['23502', '23514', '22P02', '22007', '22008'].includes(pgCode)) {
+      statusCode = 400;
+      message = `Invalid data: ${err.message}`;
+    }
   }
 
   if (statusCode >= 500) {

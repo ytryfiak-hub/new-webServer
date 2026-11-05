@@ -5,7 +5,7 @@ dotenv.config();
 interface EnvConfig {
   nodeEnv: string;
   port: number;
-  mongoUri: string;
+  databaseUrl: string;
 }
 
 function getEnvVar(key: string, fallback?: string): string {
@@ -19,5 +19,8 @@ function getEnvVar(key: string, fallback?: string): string {
 export const env: EnvConfig = {
   nodeEnv: getEnvVar('NODE_ENV', 'development'),
   port: Number(getEnvVar('PORT', '5000')),
-  mongoUri: getEnvVar('MONGO_URI', 'mongodb://127.0.0.1:27017/user-crud-db'),
+  databaseUrl: getEnvVar(
+    'DATABASE_URL',
+    'postgres://postgres:postgres@127.0.0.1:5432/user_crud_db',
+  ),
 };

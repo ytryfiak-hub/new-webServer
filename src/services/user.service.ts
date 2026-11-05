@@ -1,5 +1,5 @@
-import { FilterQuery } from 'mongoose';
-import { IUserDocument, UserModel } from '../models/user.model';
+import { IUser } from '../models/user.model';
+import { UserFilter, userRepository } from '../repositories/user.repository';
 import { ApiError } from '../utils/ApiError';
 import { CreateUserInput, UpdateUserInput } from '../validations/user.validation';
 
@@ -16,25 +16,25 @@ export interface PaginatedResult<T> {
   totalPages: number;
 }
 
-async function createUser(input: CreateUserInput): Promise<IUserDocument> {
-  const existing = await UserModel.findOne({ email: input.email });
+async function createUser(input: CreateUserInput & { photo?: string }): Promise<IUser> {
+  const existing = await userRepository.findByEmail(input.email);
   if (existing) {
     throw ApiError.conflict('User with this email already exists');
   }
 
-  return UserModel.create(input);
+  return userRepository.create(input);
 }
 
 async function getUsers(
-  filter: FilterQuery<IUserDocument>,
+  filter: UserFilter,
   pagination: PaginationOptions,
-): Promise<PaginatedResult<IUserDocument>> {
+): Promise<PaginatedResult<IUser>> {
   const { page, limit } = pagination;
   const skip = (page - 1) * limit;
 
   const [items, total] = await Promise.all([
-    UserModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
-    UserModel.countDocuments(filter),
+    userRepository.findMany(filter, skip, limit),
+    userRepository.count(filter),
   ]);
 
   return {
@@ -46,28 +46,23 @@ async function getUsers(
   };
 }
 
-async function getUserById(id: string): Promise<IUserDocument> {
-  const user = await UserModel.findById(id);
+async function getUserById(id: string): Promise<IUser> {
+  const user = await userRepository.findById(id);
   if (!user) {
     throw ApiError.notFound('User not found');
   }
   return user;
 }
 
-async function updateUser(id: string, input: UpdateUserInput): Promise<IUserDocument> {
+async function updateUser(id: string, input: UpdateUserInput): Promise<IUser> {
   if (input.email) {
-    const existing = await UserModel.findOne({ email: input.email, _id: { $ne: id } });
+    const existing = await userRepository.findByEmailExcludingId(input.email, id);
     if (existing) {
       throw ApiError.conflict('User with this email already exists');
     }
   }
 
-  const user = await UserModel.findByIdAndUpdate(
-    id,
-    { $set: input },
-    { new: true, runValidators: true },
-  );
-
+  const user = await userRepository.updateById(id, input);
   if (!user) {
     throw ApiError.notFound('User not found');
   }
@@ -76,7 +71,7 @@ async function updateUser(id: string, input: UpdateUserInput): Promise<IUserDocu
 }
 
 async function deleteUser(id: string): Promise<void> {
-  const user = await UserModel.findByIdAndDelete(id);
+  const user = await userRepository.deleteById(id);
   if (!user) {
     throw ApiError.notFound('User not found');
   }
@@ -87,5 +82,6 @@ export const userService = {
   getUsers,
   getUserById,
   updateUser,
+  updateProfile: updateUser, // Додано як зручний alias для контролера профілю
   deleteUser,
 };
